@@ -5,6 +5,7 @@ pub mod sfbinpack;
 mod text;
 pub mod viribinpack;
 
+pub use bullet_trainer::reader::DataReader;
 pub use direct::{CanBeDirectlySequentiallyLoaded, DirectSequentialDataLoader};
 pub use montybinpack::MontyBinpackLoader;
 pub use sfbinpack::SfBinpackLoader;

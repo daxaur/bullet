@@ -23,6 +23,14 @@ cuda = ["bullet-gpu/cuda", "bullet-trainer/cuda"]
 rocm = ["bullet-gpu/rocm", "bullet-trainer/rocm"]
 
 [[example]]
+name = "ares"
+path = "../../examples/ares.rs"
+
+[[example]]
+name = "ares_parity"
+path = "../../examples/ares_parity.rs"
+
+[[example]]
 name = "simple"
 path = "../../examples/simple.rs"
 
