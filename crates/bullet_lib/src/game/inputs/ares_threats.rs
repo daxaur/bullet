@@ -667,8 +667,11 @@ impl SparseInputType for AresThreats {
     }
 
     fn max_active(&self) -> usize {
-        // 32 PST + up to a few hundred threats; generous bound.
-        2048
+        // Measured over the 644-position parity corpus: max 84 features/POV (32 PST + threats),
+        // mean ~47. 256 is a safe upper bound with wide margin for dense positions, and 8x smaller
+        // than the old 2048 — that bound sizes a per-batch Vec<i32> (max_active*batch_size) that is
+        // memset every batch, so an oversized value directly throttles throughput.
+        256
     }
 
     fn map_features<F: FnMut(usize, usize)>(&self, pos: &Self::RequiredDataType, mut f: F) {
