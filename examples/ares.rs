@@ -137,9 +137,20 @@ fn main() {
     // Env overrides so a cheap VALIDATION run (few superbatches) can produce a checkpoint to
     // exercise the converter + eval-parity before committing to a full ~4h GPU run.
     let env_usize = |k: &str, d: usize| std::env::var(k).ok().and_then(|s| s.parse().ok()).unwrap_or(d);
+    // ARES_SUPERBATCHES = TOTAL target (keeps the cosine LR anneal consistent across resumed sessions).
     let superbatches = env_usize("ARES_SUPERBATCHES", SUPERBATCHES);
+    // Multi-session resume: continue a prior run from its checkpoint. ARES_START_SUPERBATCH = the next
+    // superbatch to run; ARES_RESUME = the checkpoint dir to load (weights+momentum+velocity).
+    let start_superbatch = env_usize("ARES_START_SUPERBATCH", 1).max(1);
     let save_rate = env_usize("ARES_SAVE_RATE", 40).min(superbatches.max(1));
     let binpack = std::env::var("ARES_BINPACK").unwrap_or_else(|_| BINPACK_PATH.to_string());
+    // Feature gen is CPU-bound; use all host cores (override with ARES_THREADS).
+    let threads = env_usize("ARES_THREADS", std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4));
+
+    if let Ok(ckpt) = std::env::var("ARES_RESUME") {
+        trainer.optimiser.load_from_checkpoint(&ckpt).expect("ARES_RESUME: failed to load checkpoint");
+        println!("RESUMED from {ckpt} -> continuing at superbatch {start_superbatch}/{superbatches}");
+    }
 
     let schedule = TrainingSchedule {
         net_id: NET_ID.to_string(),
@@ -147,7 +158,7 @@ fn main() {
         steps: TrainingSteps {
             batch_size: 16_384,
             batches_per_superbatch: 6104,
-            start_superbatch: 1,
+            start_superbatch,
             end_superbatch: superbatches,
         },
         wdl_scheduler: wdl::ConstantWDL { value: wdl_proportion },
@@ -156,7 +167,7 @@ fn main() {
     };
 
     let settings =
-        LocalSettings { threads: 4, test_set: None, output_directory: "checkpoints", batch_queue_size: 32 };
+        LocalSettings { threads, test_set: None, output_directory: "checkpoints", batch_queue_size: 32 };
 
     // Real Stockfish binpack data, same filter as ares_lite.rs, wrapped to yield AresChessBoard.
     let data_loader = {
