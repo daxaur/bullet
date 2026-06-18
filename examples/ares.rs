@@ -134,6 +134,13 @@ fn main() {
             l3.forward(hl3).select(output_buckets)
         });
 
+    // Env overrides so a cheap VALIDATION run (few superbatches) can produce a checkpoint to
+    // exercise the converter + eval-parity before committing to a full ~4h GPU run.
+    let env_usize = |k: &str, d: usize| std::env::var(k).ok().and_then(|s| s.parse().ok()).unwrap_or(d);
+    let superbatches = env_usize("ARES_SUPERBATCHES", SUPERBATCHES);
+    let save_rate = env_usize("ARES_SAVE_RATE", 40).min(superbatches.max(1));
+    let binpack = std::env::var("ARES_BINPACK").unwrap_or_else(|_| BINPACK_PATH.to_string());
+
     let schedule = TrainingSchedule {
         net_id: NET_ID.to_string(),
         eval_scale: 380.0, // engine NETWORK_SCALE (NOT 400)
@@ -141,11 +148,11 @@ fn main() {
             batch_size: 16_384,
             batches_per_superbatch: 6104,
             start_superbatch: 1,
-            end_superbatch: SUPERBATCHES,
+            end_superbatch: superbatches,
         },
         wdl_scheduler: wdl::ConstantWDL { value: wdl_proportion },
-        lr_scheduler: lr::CosineDecayLR { initial_lr, final_lr, final_superbatch: SUPERBATCHES },
-        save_rate: 40,
+        lr_scheduler: lr::CosineDecayLR { initial_lr, final_lr, final_superbatch: superbatches },
+        save_rate,
     };
 
     let settings =
@@ -161,7 +168,7 @@ fn main() {
                 && e.mv.mtype() == MoveType::Normal
                 && e.pos.piece_at(e.mv.to()).piece_type() == PieceType::None
         }
-        AresBinpackLoader(SfBinpackLoader::new(BINPACK_PATH, 1024, 4, filter))
+        AresBinpackLoader(SfBinpackLoader::new(&binpack, 1024, 4, filter))
     };
 
     trainer.run(&schedule, &settings, &data_loader);
