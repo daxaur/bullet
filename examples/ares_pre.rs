@@ -91,6 +91,7 @@ fn main() {
     let env_usize = |k: &str, d: usize| std::env::var(k).ok().and_then(|s| s.parse().ok()).unwrap_or(d);
     let superbatches = env_usize("ARES_SUPERBATCHES", SUPERBATCHES);
     let start_superbatch = env_usize("ARES_START_SUPERBATCH", 1).max(1);
+    let end_superbatch = env_usize("ARES_END_SUPERBATCH", superbatches).min(superbatches).max(start_superbatch);
     let save_rate = env_usize("ARES_SAVE_RATE", 40).min(superbatches.max(1));
     let data = std::env::var("ARES_DATA").unwrap_or_else(|_| DATA_PATH.to_string());
     let threads = env_usize("ARES_THREADS", std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4));
@@ -107,7 +108,7 @@ fn main() {
             batch_size: 16_384,
             batches_per_superbatch: 6104,
             start_superbatch,
-            end_superbatch: superbatches,
+            end_superbatch,
         },
         wdl_scheduler: wdl::ConstantWDL { value: wdl_proportion },
         lr_scheduler: lr::CosineDecayLR { initial_lr, final_lr, final_superbatch: superbatches },

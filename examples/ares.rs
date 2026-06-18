@@ -142,6 +142,8 @@ fn main() {
     // Multi-session resume: continue a prior run from its checkpoint. ARES_START_SUPERBATCH = the next
     // superbatch to run; ARES_RESUME = the checkpoint dir to load (weights+momentum+velocity).
     let start_superbatch = env_usize("ARES_START_SUPERBATCH", 1).max(1);
+    // Per-SESSION stop (fits a ~9h Kaggle session); the cosine total stays = superbatches.
+    let end_superbatch = env_usize("ARES_END_SUPERBATCH", superbatches).min(superbatches).max(start_superbatch);
     let save_rate = env_usize("ARES_SAVE_RATE", 40).min(superbatches.max(1));
     let binpack = std::env::var("ARES_BINPACK").unwrap_or_else(|_| BINPACK_PATH.to_string());
     // Feature gen is CPU-bound; use all host cores (override with ARES_THREADS).
@@ -159,7 +161,7 @@ fn main() {
             batch_size: 16_384,
             batches_per_superbatch: 6104,
             start_superbatch,
-            end_superbatch: superbatches,
+            end_superbatch,
         },
         wdl_scheduler: wdl::ConstantWDL { value: wdl_proportion },
         lr_scheduler: lr::CosineDecayLR { initial_lr, final_lr, final_superbatch: superbatches },
