@@ -777,6 +777,17 @@ impl OutputBuckets<AresChessBoard> for AresOutputBuckets {
 }
 
 impl AresThreats {
+    /// Collect the (stm_idx, ntm_idx) feature pairs for a training position, in
+    /// the SAME order `map_features` emits them. This is the precompute entry
+    /// point: it reuses the exact `SparseInputType::map_features` logic (no
+    /// reimplementation) so the premapped records are bit-identical to the
+    /// on-the-fly path.
+    pub fn map_pairs(board: &AresChessBoard) -> Vec<(usize, usize)> {
+        let mut out = Vec::new();
+        AresThreats.map_features(board, |s, n| out.push((s, n)));
+        out
+    }
+
     /// Collect the active feature indices for a given absolute board + perspective.
     /// This is the parity-gate entry point (POV0=White, POV1=Black).
     pub fn features(board: &AresChessBoard, pov_white: bool) -> Vec<usize> {

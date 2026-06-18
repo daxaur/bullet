@@ -31,6 +31,14 @@ name = "ares_parity"
 path = "../../examples/ares_parity.rs"
 
 [[example]]
+name = "ares_precompute"
+path = "../../examples/ares_precompute.rs"
+
+[[example]]
+name = "ares_pre"
+path = "../../examples/ares_pre.rs"
+
+[[example]]
 name = "simple"
 path = "../../examples/simple.rs"
 

@@ -1,4 +1,5 @@
 mod adapter;
+mod ares_pre;
 mod ares_threats;
 mod ataxx147;
 mod chess768;
@@ -6,7 +7,8 @@ mod chess_buckets;
 mod factorised;
 
 pub use adapter::MarlinFormatAdapter;
-pub use ares_threats::{AresChessBoard, AresOutputBuckets, AresThreats};
+pub use ares_pre::{AresPremapped, AresPreOutputBuckets, AresThreatsPre, NNZ as ARES_NNZ};
+pub use ares_threats::{AresChessBoard, AresOutputBuckets, AresThreats, OUTPUT_BUCKETS_LAYOUT};
 pub use ataxx147::{Ataxx98, Ataxx147};
 pub use chess_buckets::{ChessBuckets, ChessBucketsMirrored};
 pub use chess768::Chess768;
