@@ -35,6 +35,10 @@ name = "ares_precompute"
 path = "../../examples/ares_precompute.rs"
 
 [[example]]
+name = "ares_train_parity"
+path = "../../examples/ares_train_parity.rs"
+
+[[example]]
 name = "ares_pre"
 path = "../../examples/ares_pre.rs"
 

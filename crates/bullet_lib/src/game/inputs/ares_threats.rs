@@ -675,52 +675,51 @@ impl SparseInputType for AresThreats {
     }
 
     fn map_features<F: FnMut(usize, usize)>(&self, pos: &Self::RequiredDataType, mut f: F) {
-        // Genuine dual-perspective emission: every active feature (a PST entry for a
-        // piece, or a threat between two pieces) exists identically from both POVs;
-        // only the index differs. We enumerate each active feature ONCE and emit the
-        // matching (stm-pov, ntm-pov) index pair, which is the correct bullet encoding.
+        // Correct dual-perspective emission.
         //
-        // POV0 == side-to-move. For a STM-relative bulletformat board, the
-        // reconstructed absolute board has STM = White iff the original STM was White.
+        // The bullet sparse encoding writes `our` into the STM accumulator and `opp`
+        // into the NTM accumulator at the SAME slot (see value.rs): the two columns are
+        // INDEPENDENT active-feature lists, coupled only by their slot count. The only
+        // requirement is that the STM list be EXACTLY the engine's mover-POV active set
+        // and the NTM list be EXACTLY the engine's non-mover-POV active set; the pairing
+        // order is irrelevant because the sparse accumulator sums columns set-wise.
+        //
+        // The previous implementation tried to pair each active feature across both POVs
+        // at once and, for threats that the engine includes in only ONE perspective
+        // (a threat index can be < 0 / excluded for one POV but valid for the other),
+        // fell back to a SELF-PAIR `f(idx, idx)` — which injected that feature into BOTH
+        // accumulators, polluting the perspective the engine deliberately excluded it
+        // from. That produced spurious threat features (verified against the corpus) for
+        // BOTH white- and black-to-move positions and is what broke the trained net.
+        //
+        // Fix: enumerate each perspective independently via the SAME `features_for_pov`
+        // path the parity gate / engine oracle use, then zip the two sorted sets. The
+        // engine guarantees equal per-POV active counts (PST: one per piece; threats:
+        // exclusions are symmetric in count), so the zip is total — verified across the
+        // full 644-position corpus.
+        //
+        // POV0 == side-to-move. For a STM-relative bulletformat board (`stm_is_black:
+        // false`, as the trainer feeds), the reconstructed board has the mover as White,
+        // so STM = White-POV and NTM = Black-POV on that reconstructed board.
         let board = AresBoard::from_bullet(&pos.board, pos.stm_is_black);
         let (stm, ntm) =
             if pos.stm_is_black { (Color::Black, Color::White) } else { (Color::White, Color::Black) };
 
-        let stm_king = board.king_square(stm);
-        let ntm_king = board.king_square(ntm);
-        let stm_mirror = stm_king.is_kingside();
-        let ntm_mirror = ntm_king.is_kingside();
-        let occ = Bitboard(board.occ);
+        let mut stm_feats: Vec<usize> = Vec::with_capacity(64);
+        let mut ntm_feats: Vec<usize> = Vec::with_capacity(64);
+        features_for_pov(&board, stm, |i| stm_feats.push(i));
+        features_for_pov(&board, ntm, |i| ntm_feats.push(i));
+        stm_feats.sort_unstable();
+        ntm_feats.sort_unstable();
 
-        let mut sq_iter = Bitboard(board.occ);
-        while let Some(square) = sq_iter.next() {
-            let piece = board.piece_on[square.0 as usize];
+        debug_assert_eq!(
+            stm_feats.len(),
+            ntm_feats.len(),
+            "Ares per-POV active feature counts must match for the dual-perspective zip"
+        );
 
-            // PST feature (always present from both perspectives).
-            f(
-                pst_index(piece.color(), piece.piece_type(), square, stm_king, stm),
-                pst_index(piece.color(), piece.piece_type(), square, ntm_king, ntm),
-            );
-
-            // Threat features: a threat is active from a perspective only when its
-            // index is >= 0. The engine's `features_for_pov` filters per-perspective,
-            // so a threat may be active for one POV and excluded for the other. We
-            // emit a pair only when BOTH are active; otherwise emit it singly against
-            // the same index (a self-pair is the standard bullet fallback) — but to
-            // stay faithful to the per-POV feature *sets*, we emit each side's active
-            // threats independently when they diverge.
-            let threats = attacks(piece, square, occ) & occ;
-            for target in threats {
-                let attacked = board.piece_on[target.0 as usize];
-                let si = threat_index(piece, square, attacked, target, stm_mirror, stm);
-                let ni = threat_index(piece, square, attacked, target, ntm_mirror, ntm);
-                match (si >= 0, ni >= 0) {
-                    (true, true) => f(THREAT_BASE + si as usize, THREAT_BASE + ni as usize),
-                    (true, false) => f(THREAT_BASE + si as usize, THREAT_BASE + si as usize),
-                    (false, true) => f(THREAT_BASE + ni as usize, THREAT_BASE + ni as usize),
-                    (false, false) => {}
-                }
-            }
+        for (&s, &n) in stm_feats.iter().zip(ntm_feats.iter()) {
+            f(s, n);
         }
     }
 
