@@ -181,7 +181,10 @@ fn main() {
                 && e.mv.mtype() == MoveType::Normal
                 && e.pos.piece_at(e.mv.to()).piece_type() == PieceType::None
         }
-        AresBinpackLoader(SfBinpackLoader::new(&binpack, 1024, 4, filter))
+        // ARES_BINPACK may be a single path or a comma-separated list of binpack months
+        // (v2 data-scale run interleaves multiple Stockfish data months to avoid overfitting).
+        let paths: Vec<&str> = binpack.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+        AresBinpackLoader(SfBinpackLoader::new_concat_multiple(&paths, 1024, 4, filter))
     };
 
     trainer.run(&schedule, &settings, &data_loader);
