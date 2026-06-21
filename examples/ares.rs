@@ -94,7 +94,10 @@ where
 fn main() {
     let initial_lr = 0.001;
     let final_lr = 0.001 * 0.3f32.powi(5);
-    let wdl_proportion = 0.75;
+    // v3 (beat-reckless run): WDL 0.75 -> 0.25 result-weight. bullet's `value` is the GAME-RESULT
+    // proportion; 0.75 was bullet's blanket default (untuned). The field is eval-dominant
+    // (SF ramps eval 0.8->0.7 ~= 0.2->0.3 result-weight). Battle-plan #3, highest-EV loss lever.
+    let wdl_proportion = 0.25;
 
     let mut trainer = ValueTrainerBuilder::default()
         .dual_perspective()
@@ -113,8 +116,9 @@ fn main() {
             SavedFormat::id("l3w"),
             SavedFormat::id("l3b"),
         ])
-        // MSE baseline (the loss we will A/B HL-Gauss against next).
-        .loss_fn(|output, target| output.sigmoid().squared_error(target))
+        // v3: power-loss exponent 2.5 (SF/Viri field default, vs MSE p=2) + label smoothing
+        // on the target (clip to [0.01,0.99], eps<=0.02 keeps FT quant headroom). Battle-plan #9+#12.
+        .loss_fn(|output, target| output.sigmoid().power_error(target.clip_pass_through_grad(0.01, 0.99), 2.5))
         .build(|builder, stm_inputs, ntm_inputs, output_buckets| {
             let l0 = builder.new_affine("l0", 74544, FT_SIZE);
             let l1 = builder.new_affine("l1", 2 * (FT_SIZE / 2), NUM_OUTPUT_BUCKETS * L1_OUT);
@@ -164,7 +168,11 @@ fn main() {
             end_superbatch,
         },
         wdl_scheduler: wdl::ConstantWDL { value: wdl_proportion },
-        lr_scheduler: lr::CosineDecayLR { initial_lr, final_lr, final_superbatch: superbatches },
+        // v3: warmup wrapper on cosine — free stability on fresh-init FT (battle-plan #10).
+        lr_scheduler: lr::Warmup {
+            inner: lr::CosineDecayLR { initial_lr, final_lr, final_superbatch: superbatches },
+            warmup_batches: 200,
+        },
         save_rate,
     };
 
@@ -184,7 +192,9 @@ fn main() {
         // ARES_BINPACK may be a single path or a comma-separated list of binpack months
         // (v2 data-scale run interleaves multiple Stockfish data months to avoid overfitting).
         let paths: Vec<&str> = binpack.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
-        AresBinpackLoader(SfBinpackLoader::new_concat_multiple(&paths, 1024, 4, filter))
+        // v3: loader buffer 1024 -> 4096 MB for better cross-month shuffle on the multi-month
+        // concat (battle-plan #13). Needs a >=16GB-RAM box. threads: use more cores for feature gen.
+        AresBinpackLoader(SfBinpackLoader::new_concat_multiple(&paths, 4096, 8, filter))
     };
 
     trainer.run(&schedule, &settings, &data_loader);
