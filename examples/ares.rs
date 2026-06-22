@@ -94,10 +94,9 @@ where
 fn main() {
     let initial_lr = 0.001;
     let final_lr = 0.001 * 0.3f32.powi(5);
-    // v3 (beat-reckless run): WDL 0.75 -> 0.25 result-weight. bullet's `value` is the GAME-RESULT
-    // proportion; 0.75 was bullet's blanket default (untuned). The field is eval-dominant
-    // (SF ramps eval 0.8->0.7 ~= 0.2->0.3 result-weight). Battle-plan #3, highest-EV loss lever.
-    let wdl_proportion = 0.25;
+    // Run 0: reverted to v2's 0.75 for a clean, legible baseline (WDL 0.25 becomes an isolated
+    // A/B in a later run, not bundled here). Only net-affecting change vs clean-v2 = the 12mo data.
+    let wdl_proportion = 0.75;
 
     let mut trainer = ValueTrainerBuilder::default()
         .dual_perspective()
@@ -116,9 +115,11 @@ fn main() {
             SavedFormat::id("l3w"),
             SavedFormat::id("l3b"),
         ])
-        // v3: power-loss exponent 2.5 (SF/Viri field default, vs MSE p=2) + label smoothing
-        // on the target (clip to [0.01,0.99], eps<=0.02 keeps FT quant headroom). Battle-plan #9+#12.
-        .loss_fn(|output, target| output.sigmoid().power_error(target.clip_pass_through_grad(0.01, 0.99), 2.5))
+        // Run 0 (clean baseline): REVERTED v3's power-loss+label-smoothing — they saturated the
+        // i8 head and broke eval-parity (v3 +2.85cp FAIL). Back to v2's clean MSE (gave +0.19cp).
+        // Edge-Playbook EDGE 0: parity must be green before any edge is legible. Change ONE thing
+        // per run; this run's only net-affecting change vs clean v2 is the 12-month data.
+        .loss_fn(|output, target| output.sigmoid().squared_error(target))
         .build(|builder, stm_inputs, ntm_inputs, output_buckets| {
             let l0 = builder.new_affine("l0", 74544, FT_SIZE);
             let l1 = builder.new_affine("l1", 2 * (FT_SIZE / 2), NUM_OUTPUT_BUCKETS * L1_OUT);
@@ -168,11 +169,8 @@ fn main() {
             end_superbatch,
         },
         wdl_scheduler: wdl::ConstantWDL { value: wdl_proportion },
-        // v3: warmup wrapper on cosine — free stability on fresh-init FT (battle-plan #10).
-        lr_scheduler: lr::Warmup {
-            inner: lr::CosineDecayLR { initial_lr, final_lr, final_superbatch: superbatches },
-            warmup_batches: 200,
-        },
+        // Run 0: plain cosine (reverted warmup) — exact v2 schedule for a clean baseline.
+        lr_scheduler: lr::CosineDecayLR { initial_lr, final_lr, final_superbatch: superbatches },
         save_rate,
     };
 
